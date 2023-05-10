@@ -1,0 +1,343 @@
+{{ include('partial/header.twig') }}
+
+{% if ecran == "envoi" %}
+<script>
+    let urlActionDropzone = $("#formEnvoi").prop("action");
+
+    function getIconClass(type) {
+        if (type.split("/")[0] === "image") {
+            return "fa-file-image";
+        } else if (type.split("/")[1] === "pdf") {
+            return "fa-file-pdf";
+        } else if (type.split("/")[1] === "vnd.openxmlformats-officedocument.wordprocessingml.document" || type.split("/")[1] === "msword") {
+            return "fa-file-word";
+        } else if (type.split("/")[1] === "vnd.openxmlformats-officedocument.spreadsheetml.sheet" || type.split("/")[1] === "vnd.ms-excel") {
+            return "fa-file-excel";
+        } else if (type.split("/")[1] === "vnd.openxmlformats-officedocument.presentationml.presentation" || type.split("/")[1] === "vnd.ms-powerpoint") {
+            return "fa-file-powerpoint";
+        } else if (type.split("/")[0] === "video") {
+            return "fa-file-video";
+        } else if (type.split("/")[0] === "audio") {
+            return "fa-file-audio";
+        } else if (type.split("/")[0] === "text") {
+            return "fa-file-lines";
+        } else if (type.split("/")[1] === "zip" || type.split("/")[1] === "x-7z-compressed" || type.split("/")[1] === "x-tar" || type.split("/")[1] === "gzip" || type.split("/")[1] === "x-zip-compressed") {
+            return "fa-file-zipper";
+        } else {
+            return "fa-file";
+        }
+    }
+
+    const dropzone = Dropzone.options.uploadFichiers = {
+        url: urlActionDropzone,
+        autoProcessQueue: false,
+        uploadMultiple: true,
+        timeout: 120000,
+        maxFilesize: 256,
+        createImageThumbnails: false,
+        parallelUploads: 10,
+        maxFiles: 10,
+        acceptedFiles: null,
+        addRemoveLinks: true,
+        dictDefaultMessage: "Importer <i class=\"fa-solid fa-upload\"></i>",
+        dictCancelUpload: "Annuler l'envoi du fichier",
+        dictUploadCanceled: "Envoi du fichier annulé",
+        dictInvalidFileType: "Type de fichier interdit.",
+        dictCancelUploadConfirmation: "Êtes-vous sûr de vouloir annuler l'envoi de ce fichier ?",
+        dictFileTooBig: "Fichier trop gros (\{\{filesize\}\}Mb). Taille max. : \{\{maxFilesize\}\}Mb.",
+        dictRemoveFile: "<i class=\"fa-solid fa-xmark\"></i>",
+        previewsContainer: "#previews",
+        init: function () {
+            let myDropzone = this;
+
+            this.on("addedfile", file => {
+                if (!$("#previews").hasClass("dropzone")) {
+                    $("#previews").addClass("dropzone");
+                }
+                console.log('nouveau fichier reçu');
+                console.log(file.status);
+                $(file._removeLink).closest(".dz-file-preview").prepend("<i class=\"file-icon fa-regular " + getIconClass(file.type) + "\"></i>");
+                if (file.status === "added") {
+                    $(file._removeLink).closest(".dz-file-preview").prepend("<i class=\"upload-status-icon fa-solid fa-check\"></i>");
+                }
+            });
+
+            this.on("error", function (file, message) {
+                if (file.status === "error") {
+                    if ($(file._removeLink).closest(".dz-file-preview").find(".upload-status-icon").length > 0) {
+                        $(file._removeLink).closest(".dz-file-preview").find(".upload-status-icon").remove();
+                    }
+                    $(file._removeLink).closest(".dz-file-preview").prepend("<i class=\"upload-status-icon fa-solid fa-triangle-exclamation\"></i>");
+                }
+            });
+
+            this.element.closest(".form-body").querySelector("#sendTransfert").addEventListener("click", function (e) {
+                // Make sure that the form isn't actually being sent.
+                e.preventDefault();
+                e.stopPropagation();
+                if (!$(this).hasClass("loading")) {
+                    let parsleyForm = $("#formEnvoi").parsley();
+                    window.Parsley && window.Parsley.addMessage('fr', 'multipleemail', 'Email(s) invalides.');
+                    if (parsleyForm.validate({
+                        group: "etape2"
+                    })) {
+                        myDropzone.processQueue();
+                        showLoadingScreen();
+                    } else {
+                        console.log("pb valid");
+                    }
+                }
+            });
+
+            this.on("sendingmultiple", function (files, rq) {
+                
+            });
+            this.on("totaluploadprogress", function (pourcent, totalBytes, totalBytesSent) {
+                $(".loader .load").css("width", pourcent + "%");
+            });
+            this.on("successmultiple", function (files, response) {
+                // Gets triggered when the files have successfully been sent.
+                console.log(response);
+                console.log("ready to submit form ajax");
+                let fichiersIdStr = "";
+                let cpt = 0;
+                for (const [key, value] of Object.entries(response)) {
+                    if (Number.isInteger(value.fichierId)) {
+                        if (cpt === 0) {
+                            fichiersIdStr = value.fichierId;
+                        } else {
+                            fichiersIdStr += "," + value.fichierId;
+                        }
+                        cpt++;
+                    }
+                }
+                let data = {
+                    nom: $("#expediteur-nom").val(),
+                    prenom: $("#expediteur-prenom").val(),
+                    mail: $("#expediteur-email").val(),
+                    dest: $("#destinataires-email").val(),
+                    obj: $("#destinataire-objet").val(),
+                    msg: $("#destinataire-message").val(),
+                    fichiers: fichiersIdStr
+                };
+                let url = $("#formEnvoi").prop("action");
+                $.ajax({
+                    dataType: 'json',
+                    method: "POST",
+                    url: url,
+                    data: data
+                }).done(function (data) {
+                    if (data.transfertId) {
+                        showSuccessScreen(files, $("#expediteur-email").val(), $("#destinataires-email").val());
+                    }
+                }).fail(function (data) {
+                    console.log("ERREUR !");
+                    console.log(data);
+                }).always(function (data) {
+                });
+            });
+            this.on("errormultiple", function (files, response) {
+                // Gets triggered when there was an error sending the files.
+                // Maybe show form again, and notify user of error
+                console.log("ERREUR envoi fichiers !");
+                console.log(files);
+                console.log(response);
+            });
+
+            function showLoadingScreen() {
+                console.log("chargement des fichiers ...");
+                $(".etape2").hide();
+                $(".buttons").hide();
+                $("#loadingScreen").show();
+            }
+
+            function showSuccessScreen(fichiers, exp, dest) {
+                console.log("transfert réussi");
+                let txtNb = "";
+                let txtTaille = "";
+                if (fichiers.length === 1) {
+                    txtNb = "1 fichier";
+                    txtTaille = formatBytes(fichiers[0].size);
+                } else {
+                    txtNb = fichiers.length + " fichiers";
+                    let totSize = 0;
+                    fichiers.forEach(function (f) {
+                        totSize += f.size;
+                    });
+                    txtTaille = formatBytes(totSize);
+                }
+                $(".transfert-status .nb-fichiers").text(txtNb);
+                $(".transfert-status .taille-fichiers").text(txtTaille);
+
+                for (const [key, value] of Object.entries(fichiers)) {
+                    $(".transfert-status .liste-fichiers").append("<li><i class=\"file-icon fa-regular " + getIconClass(value.type) + "\"></i>" + value.name + "</li>");
+                }
+
+                $(".transfert-status .transfert-echange .exp").text(exp);
+                let destStr = "";
+                if (dest.split(",").length > 1) {
+                    dest.split(",").forEach(function (d) {
+                        destStr += "<span>" + d + "</span>";
+                    });
+                } else {
+                    destStr = dest;
+                }
+                $(".transfert-status .transfert-echange .dests").text(destStr);
+
+                $("#loadingScreen").fadeOut(300, () => {
+                    $("#successScreen").fadeIn(300);
+                });
+            }
+
+            function formatBytes(bytes, decimals = 2) {
+                if (!+bytes) return '0 Ko'
+                const k = 1024
+                const dm = decimals < 0 ? 0 : decimals
+                const sizes = ['octets', 'Ko', 'Mo', 'Go', 'To', 'Po', 'Eo', 'Zo', 'Yo']
+
+                const i = Math.floor(Math.log(bytes) / Math.log(k))
+
+                return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`
+            }
+        }
+    };
+    Dropzone.discover();
+</script>
+{% endif %}
+
+<main>
+    <div class="form-body">
+        {% if ecran == "envoi" %}
+        <form method="POST" id="formEnvoi" data-parsley-validate="" action="{{ path('checkFormData') }}"
+              data-etape="1" enctype="multipart/form-data">
+            <div class="etape etape1">
+                <div class="champ">
+                    <label for="expediteur-nom">Votre nom</label>
+                    <input type="text" id="expediteur-nom" name="expediteur-nom" required data-parsley-group="etape1"/>
+                </div>
+                <div class="champ">
+                    <label for="expediteur-prenom">Votre prénom</label>
+                    <input type="text" id="expediteur-prenom" name="expediteur-prenom" required
+                           data-parsley-group="etape1"/>
+                </div>
+                <div class="champ">
+                    <label for="expediteur-email">Votre adresse mail</label>
+                    <input type="email" id="expediteur-email" name="expediteur-email" required
+                           data-parsley-group="etape1"/>
+                </div>
+                <div class="champ">
+                    {# <input type="file" id="fichiers" name="fichiers" hidden/> #}
+                    <div class="fichiers dropzone" id="upload-fichiers" action="{{ path('checkFormData') }}">
+                        {# <div id="add"><i class="fa-solid fa-plus"></i><span class="max"></span></div>
+                        <i class="fa-solid fa-circle-plus"></i>
+                        <div id="liste"></div>
+                        <div id="remove"><i class="fa-solid fa-minus"></i><span class="min"></span></div>
+                        <p class="fichs_accpt" style="display: none">.jpg, .png, .gif, .odf, .ods, .xls, .xlsx, doc, .docx,
+                            .ppt, .pptx, .pdf, .mp3, .mp4, .mov, .avi, .wmv, .wav</p> #}
+                        <p>Glissez-déposez vos fichiers ici</p>
+                    </div>
+                    <div id="previews" class="dropzone-previews drpz"></div>
+                </div>
+            </div>
+            <div class="etape etape2">
+                <div class="champ">
+                    <label for="destinataires-email">Destinataire(s)</label>
+                    <label class="subLabel">Appuyez sur entrée pour ajouter un email destinataire</label>
+                    <input type="text" multiple id="destinataires-email" name="destinataires-email" required
+                           data-parsley-group="etape2" data-parsley-multipleemail/>
+                </div>
+                <div class="champ">
+                    <label for="destinataire-objet">Objet du transfert</label>
+                    <input type="text" id="destinataire-objet" name="destinataire-objet" required
+                           data-parsley-group="etape2"/>
+                </div>
+                <div class="champ">
+                    <label for="destinataire-message">Message personnalisé</label>
+                    <textarea name="destinataire-message" id="destinataire-message" cols="30" rows="6"></textarea>
+                </div>
+            </div>
+            <div id="loadingScreen">
+                <h3>Transfert des fichiers en cours</h3>
+                <p>Veuillez patienter</p>
+                <div class="loader">
+                    <div class="load"></div>
+                </div>
+            </div>
+            <div id="successScreen">
+                <h3><i class="fa-solid fa-circle-check"></i> Transfert réussi</h3>
+                <div class="transfert-status">
+                    <div class="load-status">
+                        <span class="nb-fichiers"></span>
+                        <span class="taille-fichiers"></span>
+                    </div>
+                    <ul class="liste-fichiers"></ul>
+                    <div class="transfert-echange">
+                        <span class="exp"></span>
+                        <i class="fa-solid fa-arrow-right-long"></i>
+                        <span class="dests"></span>
+                    </div>
+                </div>
+                <h4>Cliquez sur le lien reçu par mail pour finaliser l'envoi</h4>
+            </div>
+        </form>
+        {% endif %}
+        {% if ecran == "download" %}
+        <div id="download-screen">
+            {% if error %}
+            <h1>Erreur</h1>
+            <p>{{error}}</p>
+            {% else %}
+            <h2>Vous avez reçu des fichiers de la part de {{exp}}.</h2>
+            {% if obj and msg %}
+            <div class="message-card">
+                <h4>Objet : {{obj|raw}}</h4>
+                <p>{{msg|raw}}</p>
+            </div>    
+            {% endif %}
+            <ul class="fichiersList">
+            {% for fichier in fichiersData %}
+                <li>
+                    <span>
+                        <span class="nom">{{fichier.nom}}</span>
+                        <span class="taille">{{fichier.taille}}</span>
+                    </span>
+                    <a href="{{fichier.path}}" target="_blank"><i class="fa-solid fa-download"></i></a>
+                </li>
+            {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        <div class="buttons">
+            {% if ecran = "envoi" %}
+            <button id="goToEtape2" data-etape="1" class="submitEtape">
+                &nbsp;<span>Etape suivante</span><i
+                        class="fa-solid fa-arrow-right"></i></button>
+            <button id="goToEtape1" data-etape="2" class="backEtape"><i
+                        class="fa-solid fa-arrow-left"></i> <span>Retour</span>&nbsp;
+            </button>
+            <button id="sendTransfert" data-etape="2" class="submitEtape">
+                <i class="fa-solid fa-paper-plane"></i> <span>Envoyer</span>&nbsp;
+            </button>
+            {% endif %}
+            {% if ecran == "download" %}
+            {# TODO -> téléchargement de tout en zip #}
+            {# <button id="downloadAll" class="downloadBtn">
+                <i class="fa-solid fa-download"></i> <span>Télécharger les fichiers</span>&nbsp;
+            </button> #}
+            {% endif %}
+        </div>
+    </div>
+    {% if ecran == "envoi" %}
+    <div class="text-content">
+        <h1><span>Transférez</span> vos fichiers<br/>en toute sécurité</h1>
+        <h2>avec votre conseiller Crédit Agricole<br/>Champagne Bourgogne</h2>
+        <ul>
+            <li><i class="fa-solid fa-circle-check"></i> Simple</li>
+            <li><i class="fa-solid fa-circle-check"></i> Rapide</li>
+            <li><i class="fa-solid fa-circle-check"></i> Sécurisé</li>
+        </ul>
+    </div>
+    {% endif %}
+</main>
+
+{{ include('partial/footer.twig') }}
